@@ -19,4 +19,14 @@ data class DownloadItem(
 
 data class MediaInfo(val title: String, val uploader: String? = null, val duration: String? = null, val formats: List<MediaFormat> = emptyList())
 data class MediaFormat(val id: String, val label: String, val extension: String, val hasVideo: Boolean, val hasAudio: Boolean)
-data class DownloadOptions(val formatId: String? = null, val outputDirectory: String? = null)
+data class DownloadOptions(
+    val formatId: String? = null,
+    val outputDirectory: String? = null,
+    val audioOnly: Boolean = false,
+    val customArguments: List<String> = emptyList(),
+    val cookiesFile: String? = null,
+    val proxy: String? = null,
+    val userAgent: String? = null,
+    val ffmpegPath: String? = null,
+    val postProcessingEnabled: Boolean = true
+)

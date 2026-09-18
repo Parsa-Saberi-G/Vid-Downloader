@@ -7,10 +7,10 @@ plugins {
 android {
     namespace = "com.streamforge.downloader"
     compileSdk = 35
+    buildToolsVersion = "35.0.1"
 
     defaultConfig {
-    applicationId = "com.streamforge.downloader"
-	buildToolsVersion = "35.0.1"
+        applicationId = "com.streamforge.downloader"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -43,6 +43,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.navigation:navigation-compose:2.8.5")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")

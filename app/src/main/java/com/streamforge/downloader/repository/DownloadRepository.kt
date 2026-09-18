@@ -22,11 +22,18 @@ class DownloadRepository(private val engine: YtDlpEngine) {
         val id = UUID.randomUUID().toString()
         _downloads.update { listOf(DownloadItem(id, url, status = com.streamforge.downloader.model.DownloadStatus.ANALYZING)) + it }
         scope.launch(Dispatchers.IO) {
-            engine.download(id, url, options).collect { event -> _downloads.update { items -> items.map { item -> if (item.id != id) item else when (event) {
-                is com.streamforge.downloader.downloader.YtDlpEvent.Progress -> item.copy(status = com.streamforge.downloader.model.DownloadStatus.DOWNLOADING, progress = event.percent, fileName = event.fileName, speed = event.speed, eta = event.eta)
-                is com.streamforge.downloader.downloader.YtDlpEvent.Completed -> item.copy(status = com.streamforge.downloader.model.DownloadStatus.COMPLETED, progress = 1f, fileName = event.fileName, completedAt = System.currentTimeMillis())
-                is com.streamforge.downloader.downloader.YtDlpEvent.Failed -> item.copy(status = com.streamforge.downloader.model.DownloadStatus.FAILED, errorMessage = event.message)
-            } } } }
+            try {
+                engine.download(id, url, options).collect { event -> _downloads.update { items -> items.map { item -> if (item.id != id) item else when (event) {
+                    is com.streamforge.downloader.downloader.YtDlpEvent.Progress -> item.copy(status = com.streamforge.downloader.model.DownloadStatus.DOWNLOADING, progress = event.percent, fileName = event.fileName, speed = event.speed, eta = event.eta)
+                    is com.streamforge.downloader.downloader.YtDlpEvent.Completed -> item.copy(status = com.streamforge.downloader.model.DownloadStatus.COMPLETED, progress = 1f, fileName = event.fileName, completedAt = System.currentTimeMillis())
+                    is com.streamforge.downloader.downloader.YtDlpEvent.Failed -> item.copy(status = com.streamforge.downloader.model.DownloadStatus.FAILED, errorMessage = event.message)
+                } } } }
+            } catch (error: Exception) {
+                _downloads.update { items -> items.map { item ->
+                    if (item.id == id) item.copy(status = com.streamforge.downloader.model.DownloadStatus.FAILED, errorMessage = error.message ?: "Download failed")
+                    else item
+                } }
+            }
         }
         return id
     }
@@ -34,5 +41,12 @@ class DownloadRepository(private val engine: YtDlpEngine) {
 }
 
 class AppContainer(context: Context) {
-    val downloadRepository = DownloadRepository(ProcessYtDlpEngine(context.applicationContext))
+    val dependencyManager = com.streamforge.downloader.manager.DependencyManager(context)
+    val settingsRepository = SettingsRepository(context)
+    val errorHandler = com.streamforge.downloader.util.ErrorHandler()
+    val downloadRepository = DownloadRepository(
+        ProcessYtDlpEngine(context.applicationContext) {
+            dependencyManager.managedPath(com.streamforge.downloader.model.DependencyId.YT_DLP)
+        }
+    )
 }

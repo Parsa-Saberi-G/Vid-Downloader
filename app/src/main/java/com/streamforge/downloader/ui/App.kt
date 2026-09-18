@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.streamforge.downloader.ui
 
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -5,32 +7,258 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.streamforge.downloader.model.AppSettings
+import com.streamforge.downloader.model.DependencyState
 import com.streamforge.downloader.model.DownloadItem
+import com.streamforge.downloader.ui.theme.YtDlpTheme
 import com.streamforge.downloader.ui.viewmodel.MainViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App(vm: MainViewModel) {
-    var tab by remember { mutableIntStateOf(0) }
-    Scaffold(topBar = { TopAppBar(title = { Text("YT-DLP Downloader") }) }, bottomBar = { NavigationBar { NavigationBarItem(tab == 0, { tab = 0 }, label = { Text("Home") }, icon = { Text("⌂") }); NavigationBarItem(tab == 1, { tab = 1 }, label = { Text("Downloads") }, icon = { Text("↓") }); NavigationBarItem(tab == 2, { tab = 2 }, label = { Text("Settings") }, icon = { Text("⚙") }) } }) { padding -> when (tab) { 0 -> HomeScreen(vm, Modifier.padding(padding)); 1 -> DownloadsScreen(vm, Modifier.padding(padding)); else -> SettingsScreen(Modifier.padding(padding)) } }
+    val settings by vm.settings.collectAsStateWithLifecycle(initialValue = AppSettings.defaults(""))
+    YtDlpTheme(settings) { AppContent(vm) }
 }
 
-@Composable private fun HomeScreen(vm: MainViewModel, modifier: Modifier) {
-    val url by vm.url.collectAsStateWithLifecycle(); val info by vm.info.collectAsStateWithLifecycle(); val message by vm.message.collectAsStateWithLifecycle(); val downloads by vm.downloads.collectAsStateWithLifecycle()
+@Composable
+private fun AppContent(vm: MainViewModel) {
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("Forge Stream") }) },
+        bottomBar = {
+            NavigationBar {
+                listOf("Home", "Downloads", "Settings").forEachIndexed { index, label ->
+                    NavigationBarItem(tab == index, { tab = index }, label = { Text(label) }, icon = { Text(label.take(1)) })
+                }
+            }
+        }
+    ) { padding ->
+        when (tab) {
+            0 -> HomeScreen(vm, Modifier.padding(padding)) { tab = 2 }
+            1 -> DownloadsScreen(vm, Modifier.padding(padding))
+            else -> SettingsScreen(vm, Modifier.padding(padding))
+        }
+    }
+}
+
+@Composable
+private fun HomeScreen(vm: MainViewModel, modifier: Modifier, openSettings: () -> Unit) {
+    val url by vm.url.collectAsStateWithLifecycle()
+    val info by vm.info.collectAsStateWithLifecycle()
+    val message by vm.message.collectAsStateWithLifecycle()
+    val downloads by vm.downloads.collectAsStateWithLifecycle()
+    val dependencies by vm.dependencies.collectAsStateWithLifecycle()
     Column(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        val missing = dependencies.filter { it.state != DependencyState.INSTALLED }
+        if (missing.isNotEmpty()) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Setup check", style = MaterialTheme.typography.titleMedium)
+                    Text("Missing: ${missing.joinToString { it.id.displayName }}")
+                    Text("Install the missing components before starting a download.")
+                    Button(onClick = openSettings) { Text("Manage dependencies") }
+                }
+            }
+        }
         OutlinedTextField(url, vm::setUrl, Modifier.fillMaxWidth(), label = { Text("Media URL") }, singleLine = true)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = vm::analyze) { Text("Analyze") }; OutlinedButton(onClick = { /* clipboard integration belongs here */ }) { Text("Paste") } }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = vm::analyze) { Text("Analyze") }
+            OutlinedButton(onClick = { }) { Text("Paste") }
+        }
         message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        info?.let { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(it.title, style = MaterialTheme.typography.titleMedium); it.uploader?.let { Text(it) }; it.duration?.let { Text("Duration: $it") }; Spacer(Modifier.height(8.dp)); Button(onClick = vm::download) { Text("Download") } } } }
+        info?.let {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(it.title, style = MaterialTheme.typography.titleMedium)
+                    it.uploader?.let { uploader -> Text(uploader) }
+                    it.duration?.let { duration -> Text("Duration: $duration") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { vm.download(false) }) { Text("Download video") }
+                        OutlinedButton(onClick = { vm.download(true) }) { Text("Audio") }
+                    }
+                }
+            }
+        }
         Text("Recent downloads", style = MaterialTheme.typography.titleLarge)
         downloads.take(3).forEach { DownloadRow(it, vm::cancel) }
     }
 }
 
-@Composable private fun DownloadsScreen(vm: MainViewModel, modifier: Modifier) { val downloads by vm.downloads.collectAsStateWithLifecycle(); LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { items(downloads, key = { it.id }) { DownloadRow(it, vm::cancel) } } }
-@Composable private fun DownloadRow(item: DownloadItem, cancel: (String) -> Unit) { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { Text(item.fileName, style = MaterialTheme.typography.titleMedium); Text(item.status.name); LinearProgressIndicator({ item.progress }, Modifier.fillMaxWidth()); if (item.status.name == "DOWNLOADING") { Text("${(item.progress * 100).toInt()}%  ${item.speed}  ETA ${item.eta}"); TextButton({ cancel(item.id) }) { Text("Cancel") } }; item.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) } } } }
-@Composable private fun SettingsScreen(modifier: Modifier) { Column(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) { Text("Settings", style = MaterialTheme.typography.headlineMedium); Text("Download directory: Android Storage Access Framework"); Text("Default quality: Best available"); Text("Maximum concurrent downloads: 1"); Text("yt-dlp: Not configured"); Text("FFmpeg: Not configured"); Text("About: A safe, open yt-dlp frontend") } }
+@Composable
+private fun DownloadsScreen(vm: MainViewModel, modifier: Modifier) {
+    val downloads by vm.downloads.collectAsStateWithLifecycle()
+    val active = downloads.count { it.status.name == "DOWNLOADING" }
+    val totalSpeed = downloads.filter { it.status.name == "DOWNLOADING" }.joinToString(" + ") { it.speed }.ifBlank { "0 B/s" }
+    LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Download activity", style = MaterialTheme.typography.titleMedium)
+                    Text("$active active • $totalSpeed")
+                    Text("${downloads.count { it.status.name == "COMPLETED" }} completed")
+                }
+            }
+        }
+        items(downloads, key = { it.id }) { DownloadRow(it, vm::cancel) }
+    }
+}
+
+@Composable
+private fun DownloadRow(item: DownloadItem, cancel: (String) -> Unit) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(item.fileName, style = MaterialTheme.typography.titleMedium)
+            Text(item.status.name)
+            LinearProgressIndicator(progress = { item.progress }, modifier = Modifier.fillMaxWidth())
+            if (item.status.name == "DOWNLOADING") {
+                Text("${(item.progress * 100).toInt()}%  ${item.speed}  ETA ${item.eta}")
+                TextButton({ cancel(item.id) }) { Text("Cancel") }
+            }
+            item.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+    }
+}
+
+@Composable
+private fun SettingsScreen(vm: MainViewModel, modifier: Modifier) {
+    val settings by vm.settings.collectAsStateWithLifecycle(initialValue = AppSettings.defaults(""))
+    val dependencies by vm.dependencies.collectAsStateWithLifecycle()
+    val clipboard = LocalClipboardManager.current
+    LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { Text("Settings", style = MaterialTheme.typography.headlineMedium) }
+        item { Text("Dependencies", style = MaterialTheme.typography.titleLarge) }
+        item {
+            dependencies.forEach { dependency ->
+                val installed = dependency.state == DependencyState.INSTALLED
+                ListItem(
+                    headlineContent = { Text(dependency.id.displayName) },
+                    supportingContent = { Text(if (installed) "${dependency.version ?: "Installed"}\n${dependency.path}" else "${dependency.state}: ${dependency.message ?: "Missing"}") },
+                    trailingContent = {
+                        Row {
+                            TextButton(onClick = { if (installed) vm.remove(dependency.id) else vm.install(dependency.id) }) {
+                                Text(if (installed) "Remove" else "Install")
+                            }
+                        }
+                    }
+                )
+            }
+            OutlinedButton(onClick = vm::refreshDependencies) { Text("Check again") }
+        }
+        item { Text("General", style = MaterialTheme.typography.titleLarge) }
+        item { SettingTextField("Download folder", settings.downloadFolder) { text -> vm.updateSettings { value -> value.copy(downloadFolder = text) } } }
+        item {
+            SettingDropdown("Default quality", settings.defaultQuality, listOf("Best", "1080p", "720p", "480p", "Audio only")) {
+                vm.updateSettings { value -> value.copy(defaultQuality = it) }
+            }
+        }
+        item {
+            SettingDropdown("Default format", settings.defaultFormat, listOf("mp4", "mkv", "webm", "mp3", "m4a")) {
+                vm.updateSettings { value -> value.copy(defaultFormat = it) }
+            }
+        }
+        item { SettingSwitch("Auto-update yt-dlp", settings.autoUpdateYtDlp) { vm.updateSettings { it.copy(autoUpdateYtDlp = !it.autoUpdateYtDlp) } } }
+        item { SettingSwitch("Auto-check dependencies", settings.autoCheckDependencies) { vm.updateSettings { it.copy(autoCheckDependencies = !it.autoCheckDependencies) } } }
+        item { Text("yt-dlp", style = MaterialTheme.typography.titleLarge) }
+        item { SettingTextField("Custom arguments", settings.customYtDlpArguments) { vm.updateSettings { value -> value.copy(customYtDlpArguments = it) } } }
+        item { SettingTextField("Cookies file", settings.cookiesFile) { vm.updateSettings { value -> value.copy(cookiesFile = it) } } }
+        item { SettingTextField("Proxy", settings.proxy) { vm.updateSettings { value -> value.copy(proxy = it) } } }
+        item { SettingTextField("User agent", settings.userAgent) { vm.updateSettings { value -> value.copy(userAgent = it) } } }
+        item { Text("ffmpeg", style = MaterialTheme.typography.titleLarge) }
+        item { SettingTextField("ffmpeg path", settings.ffmpegPath) { vm.updateSettings { value -> value.copy(ffmpegPath = it) } } }
+        item { SettingSwitch("Enable post-processing", settings.postProcessingEnabled) { vm.updateSettings { it.copy(postProcessingEnabled = !it.postProcessingEnabled) } } }
+        item { Text("Appearance & advanced", style = MaterialTheme.typography.titleLarge) }
+        item {
+            SettingDropdown("Theme", settings.theme, listOf("System", "Light", "Dark")) {
+                vm.updateSettings { value -> value.copy(theme = it) }
+            }
+        }
+        item { SettingSwitch("Dynamic colors", settings.dynamicColors) { vm.updateSettings { it.copy(dynamicColors = !it.dynamicColors) } } }
+        item { SettingSwitch("Compact UI", settings.compactUi) { vm.updateSettings { it.copy(compactUi = !it.compactUi) } } }
+        item { SettingSwitch("Debug logs", settings.debugLogs) { vm.updateSettings { it.copy(debugLogs = !it.debugLogs) } } }
+        item {
+            OutlinedButton(onClick = {
+                clipboard.setText(AnnotatedString(settings.toExportText()))
+            }) { Text("Export settings") }
+        }
+        item { OutlinedButton(onClick = vm::resetSettings) { Text("Reset settings") } }
+    }
+
+}
+
+private fun AppSettings.toExportText() = buildString {
+    appendLine("downloadFolder=$downloadFolder")
+    appendLine("defaultQuality=$defaultQuality")
+    appendLine("defaultFormat=$defaultFormat")
+    appendLine("autoUpdateYtDlp=$autoUpdateYtDlp")
+    appendLine("autoCheckDependencies=$autoCheckDependencies")
+    appendLine("customYtDlpArguments=$customYtDlpArguments")
+    appendLine("cookiesFile=$cookiesFile")
+    appendLine("proxy=$proxy")
+    appendLine("userAgent=$userAgent")
+    appendLine("ffmpegPath=$ffmpegPath")
+    appendLine("postProcessingEnabled=$postProcessingEnabled")
+    appendLine("theme=$theme")
+    appendLine("dynamicColors=$dynamicColors")
+    appendLine("compactUi=$compactUi")
+    appendLine("debugLogs=$debugLogs")
+}
+
+@Composable
+private fun SettingTextField(label: String, value: String, onSave: (String) -> Unit) {
+    var draft by remember(value) { mutableStateOf(value) }
+    OutlinedTextField(
+        value = draft,
+        onValueChange = { draft = it; onSave(it) },
+        label = { Text(label) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true
+    )
+}
+
+@Composable
+private fun SettingDropdown(
+    label: String,
+    selected: String,
+    options: List<String>,
+    onSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("$label: $selected", modifier = Modifier.fillMaxWidth())
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        expanded = false
+                        onSelected(option)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingSwitch(label: String, checked: Boolean, onToggle: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(label) },
+        trailingContent = {
+            Switch(
+                checked = checked,
+                onCheckedChange = { onToggle() }
+            )
+        }
+    )
+}

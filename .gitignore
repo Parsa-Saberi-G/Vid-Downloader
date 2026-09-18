@@ -1,0 +1,13 @@
+# Android/Gradle generated files
+.gradle/
+build/
+*/build/
+
+# Local SDK and IDE configuration
+local.properties
+.idea/
+*.iml
+
+# Local machine files
+captures/
+*.log
