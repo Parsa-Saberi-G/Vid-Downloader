@@ -36,6 +36,10 @@ class SettingsRepository(private val context: Context) {
         context.getExternalFilesDir("Download") ?: context.filesDir,
         "Forge Stream"
     ).absolutePath
+    private val defaultFfmpeg = File(
+        context.filesDir,
+        "forge-stream/bin/ffmpeg"
+    ).absolutePath
 
     val settings: Flow<AppSettings> = context.settingsDataStore.data.map { preferences ->
         preferences.toSettings()
@@ -76,7 +80,7 @@ class SettingsRepository(private val context: Context) {
         cookiesFile = this[Keys.cookies] ?: "",
         proxy = this[Keys.proxy] ?: "",
         userAgent = this[Keys.userAgent] ?: "",
-        ffmpegPath = this[Keys.ffmpeg] ?: "",
+        ffmpegPath = this[Keys.ffmpeg] ?: defaultFfmpeg,
         postProcessingEnabled = this[Keys.postProcessing] ?: true,
         theme = this[Keys.theme] ?: "System",
         dynamicColors = this[Keys.dynamicColors] ?: true,

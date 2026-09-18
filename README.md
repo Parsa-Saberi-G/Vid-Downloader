@@ -1,16 +1,28 @@
-# Vid-Downloader
+# Forge Stream
 
-A Kotlin/Jetpack Compose Android yt-dlp frontend with app-private dependency management, DataStore-backed settings, and a process-backed download engine.
+A Kotlin/Jetpack Compose Android downloader with bundled, app-managed download engines and DataStore-backed settings.
 
-## Dependency setup
+## Bundled components
 
-The app stores managed binaries below its private `files/binaries` directory and validates each executable with a version check before use. Open **Settings > Dependencies** to inspect status and install/remove managed components. ffmpeg can also be configured with an Android-compatible executable path in Settings; the app passes that path to yt-dlp with `--ffmpeg-location`.
+yt-dlp and ffmpeg must be packaged inside the APK under ABI-specific assets. On first startup the app silently prepares them in executable app-private storage and validates them before use. The user does not install packages, use Termux, configure a shell path, or manage binaries manually.
 
-The app never assumes a Termux installation, shell `PATH`, shared storage path, or external package manager. Missing or invalid dependencies are surfaced in the first-launch setup check and as actionable download errors.
+The release input layout is:
+
+```text
+app/src/main/assets/forge-stream/arm64-v8a/yt-dlp
+app/src/main/assets/forge-stream/arm64-v8a/ffmpeg
+app/src/main/assets/forge-stream/x86_64/yt-dlp
+app/src/main/assets/forge-stream/x86_64/ffmpeg
+```
+
+They are extracted to `filesDir/forge-stream/bin/` and all process execution uses
+those resolved paths.
+
+The app never assumes a Termux installation, shell `PATH`, shared storage path, or external package manager. Missing or invalid bundled components are surfaced as an actionable setup error instead of crashing.
 
 ## Settings
 
-All settings are persisted with Android DataStore, including download folder, yt-dlp arguments, cookies, proxy, user agent, ffmpeg path, post-processing, appearance, debug logging, export, and reset actions.
+All settings are persisted with Android DataStore, including download folder, yt-dlp arguments, cookies, proxy, post-processing, appearance, debug logging, export, and reset actions. Tool versions and resolved locations are shown in Settings.
 
 ## Build
 

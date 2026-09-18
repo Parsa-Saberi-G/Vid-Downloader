@@ -54,15 +54,20 @@ private fun HomeScreen(vm: MainViewModel, modifier: Modifier, openSettings: () -
     val message by vm.message.collectAsStateWithLifecycle()
     val downloads by vm.downloads.collectAsStateWithLifecycle()
     val dependencies by vm.dependencies.collectAsStateWithLifecycle()
+    val toolState by vm.toolState.collectAsStateWithLifecycle()
     Column(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (toolState.isInitializing) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text(toolState.progress)
+        }
         val missing = dependencies.filter { it.state != DependencyState.INSTALLED }
         if (missing.isNotEmpty()) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Setup check", style = MaterialTheme.typography.titleMedium)
                     Text("Missing: ${missing.joinToString { it.id.displayName }}")
-                    Text("Install the missing components before starting a download.")
-                    Button(onClick = openSettings) { Text("Manage dependencies") }
+                    Text("The included download components are unavailable. Reinstall the app or open Settings for details.")
+                    Button(onClick = openSettings) { Text("View details") }
                 }
             }
         }
@@ -93,18 +98,8 @@ private fun HomeScreen(vm: MainViewModel, modifier: Modifier, openSettings: () -
 @Composable
 private fun DownloadsScreen(vm: MainViewModel, modifier: Modifier) {
     val downloads by vm.downloads.collectAsStateWithLifecycle()
-    val active = downloads.count { it.status.name == "DOWNLOADING" }
-    val totalSpeed = downloads.filter { it.status.name == "DOWNLOADING" }.joinToString(" + ") { it.speed }.ifBlank { "0 B/s" }
     LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Download activity", style = MaterialTheme.typography.titleMedium)
-                    Text("$active active • $totalSpeed")
-                    Text("${downloads.count { it.status.name == "COMPLETED" }} completed")
-                }
-            }
-        }
+        item { Text("Downloads", style = MaterialTheme.typography.headlineMedium) }
         items(downloads, key = { it.id }) { DownloadRow(it, vm::cancel) }
     }
 }
@@ -132,23 +127,25 @@ private fun SettingsScreen(vm: MainViewModel, modifier: Modifier) {
     val clipboard = LocalClipboardManager.current
     LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Settings", style = MaterialTheme.typography.headlineMedium) }
-        item { Text("Dependencies", style = MaterialTheme.typography.titleLarge) }
+        item { Text("Built-in components", style = MaterialTheme.typography.titleLarge) }
         item {
             dependencies.forEach { dependency ->
                 val installed = dependency.state == DependencyState.INSTALLED
                 ListItem(
                     headlineContent = { Text(dependency.id.displayName) },
-                    supportingContent = { Text(if (installed) "${dependency.version ?: "Installed"}\n${dependency.path}" else "${dependency.state}: ${dependency.message ?: "Missing"}") },
-                    trailingContent = {
-                        Row {
-                            TextButton(onClick = { if (installed) vm.remove(dependency.id) else vm.install(dependency.id) }) {
-                                Text(if (installed) "Remove" else "Install")
+                    supportingContent = {
+                        Text(
+                            if (installed) {
+                                "${dependency.version ?: "Ready"}\n${dependency.path}\nIncluded and configured automatically"
+                            } else {
+                                "${dependency.state}: ${dependency.path}\n${dependency.message ?: "Included component unavailable"}"
                             }
-                        }
+                        )
                     }
                 )
             }
             OutlinedButton(onClick = vm::refreshDependencies) { Text("Check again") }
+            OutlinedButton(onClick = vm::reinstallTools) { Text("Reinstall built-in tools") }
         }
         item { Text("General", style = MaterialTheme.typography.titleLarge) }
         item { SettingTextField("Download folder", settings.downloadFolder) { text -> vm.updateSettings { value -> value.copy(downloadFolder = text) } } }
@@ -164,13 +161,12 @@ private fun SettingsScreen(vm: MainViewModel, modifier: Modifier) {
         }
         item { SettingSwitch("Auto-update yt-dlp", settings.autoUpdateYtDlp) { vm.updateSettings { it.copy(autoUpdateYtDlp = !it.autoUpdateYtDlp) } } }
         item { SettingSwitch("Auto-check dependencies", settings.autoCheckDependencies) { vm.updateSettings { it.copy(autoCheckDependencies = !it.autoCheckDependencies) } } }
-        item { Text("yt-dlp", style = MaterialTheme.typography.titleLarge) }
+        item { Text("Download options", style = MaterialTheme.typography.titleLarge) }
         item { SettingTextField("Custom arguments", settings.customYtDlpArguments) { vm.updateSettings { value -> value.copy(customYtDlpArguments = it) } } }
         item { SettingTextField("Cookies file", settings.cookiesFile) { vm.updateSettings { value -> value.copy(cookiesFile = it) } } }
         item { SettingTextField("Proxy", settings.proxy) { vm.updateSettings { value -> value.copy(proxy = it) } } }
         item { SettingTextField("User agent", settings.userAgent) { vm.updateSettings { value -> value.copy(userAgent = it) } } }
-        item { Text("ffmpeg", style = MaterialTheme.typography.titleLarge) }
-        item { SettingTextField("ffmpeg path", settings.ffmpegPath) { vm.updateSettings { value -> value.copy(ffmpegPath = it) } } }
+        item { Text("Media processing is included and configured automatically.", style = MaterialTheme.typography.bodyMedium) }
         item { SettingSwitch("Enable post-processing", settings.postProcessingEnabled) { vm.updateSettings { it.copy(postProcessingEnabled = !it.postProcessingEnabled) } } }
         item { Text("Appearance & advanced", style = MaterialTheme.typography.titleLarge) }
         item {

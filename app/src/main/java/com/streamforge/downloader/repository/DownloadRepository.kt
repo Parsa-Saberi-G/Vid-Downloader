@@ -3,6 +3,7 @@ package com.streamforge.downloader.repository
 import android.content.Context
 import com.streamforge.downloader.downloader.ProcessYtDlpEngine
 import com.streamforge.downloader.downloader.YtDlpEngine
+import com.streamforge.downloader.manager.ToolManager
 import com.streamforge.downloader.model.DownloadItem
 import com.streamforge.downloader.model.DownloadOptions
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,12 +42,11 @@ class DownloadRepository(private val engine: YtDlpEngine) {
 }
 
 class AppContainer(context: Context) {
-    val dependencyManager = com.streamforge.downloader.manager.DependencyManager(context)
+    val toolManager = ToolManager(context)
+    val dependencyManager = com.streamforge.downloader.manager.DependencyManager(toolManager)
     val settingsRepository = SettingsRepository(context)
     val errorHandler = com.streamforge.downloader.util.ErrorHandler()
     val downloadRepository = DownloadRepository(
-        ProcessYtDlpEngine(context.applicationContext) {
-            dependencyManager.managedPath(com.streamforge.downloader.model.DependencyId.YT_DLP)
-        }
+        ProcessYtDlpEngine(context.applicationContext, toolManager)
     )
 }

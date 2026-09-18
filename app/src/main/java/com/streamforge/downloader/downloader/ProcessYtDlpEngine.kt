@@ -2,6 +2,7 @@ package com.streamforge.downloader.downloader
 
 import android.content.Context
 import android.util.Log
+import com.streamforge.downloader.manager.ToolManager
 import com.streamforge.downloader.model.DownloadOptions
 import com.streamforge.downloader.model.MediaInfo
 import com.streamforge.downloader.model.MediaFormat
@@ -11,14 +12,20 @@ import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
-class ProcessYtDlpEngine(private val context: Context, private val binaryPath: () -> File) : YtDlpEngine {
+class ProcessYtDlpEngine(
+    private val context: Context,
+    private val toolManager: ToolManager
+) : YtDlpEngine {
     private val processes = ConcurrentHashMap<String, Process>()
 
-    override suspend fun isAvailable() = binaryPath().canExecute()
-    override suspend fun getVersion(): String? = runCommand(listOf("--version")).getOrNull()?.trim()
+    override suspend fun isAvailable() = toolManager.initialize().isSuccess
+    override suspend fun getVersion(): String? {
+        if (toolManager.initialize().isFailure) return null
+        return runCommand(listOf("--version")).getOrNull()?.trim()
+    }
 
     override suspend fun extractInfo(url: String): Result<MediaInfo> = runCatching {
-        require(isAvailable()) { "yt-dlp is not installed. Install it from Settings > Dependencies." }
+        require(isAvailable()) { "The bundled download engine is unavailable. Reinstall the app or contact support." }
         val output = runCommand(listOf("--dump-single-json", "--no-warnings", "--skip-download", url)).getOrThrow()
         val json = JSONObject(output.substring(output.indexOf('{').takeIf { it >= 0 } ?: error("yt-dlp returned no metadata")))
         val formats = json.optJSONArray("formats")?.let { array ->
@@ -39,9 +46,13 @@ class ProcessYtDlpEngine(private val context: Context, private val binaryPath: (
     }
 
     override fun download(id: String, url: String, options: DownloadOptions): Flow<YtDlpEvent> = flow {
-        val executable = binaryPath()
+        toolManager.initialize().getOrElse {
+            emit(YtDlpEvent.Failed(it.message ?: "Built-in tools are unavailable"))
+            return@flow
+        }
+        val executable = toolManager.ytDlpPath
         if (!executable.canExecute()) {
-            emit(YtDlpEvent.Failed("yt-dlp is not installed. Install it from Settings > Dependencies."))
+            emit(YtDlpEvent.Failed("The bundled download engine is unavailable. Reinstall the app or contact support."))
             return@flow
         }
         val defaultDirectory = context.getExternalFilesDir("downloads") ?: File(context.filesDir, "downloads")
@@ -50,8 +61,8 @@ class ProcessYtDlpEngine(private val context: Context, private val binaryPath: (
         val outputTemplate = File(outputDirectory, "%(title)s.%(ext)s").absolutePath
         val args = mutableListOf(executable.absolutePath, "--newline", "--progress", "-o", outputTemplate)
         if (options.audioOnly) args += listOf("-x", "--audio-format", "mp3")
-        if (options.postProcessingEnabled && options.ffmpegPath.orEmpty().isNotBlank()) {
-            args += listOf("--ffmpeg-location", options.ffmpegPath!!)
+        if (options.postProcessingEnabled) {
+            args += listOf("--ffmpeg-location", toolManager.ffmpegPath.parentFile!!.absolutePath)
         }
         options.formatId?.let { args += listOf("-f", it) }
         options.cookiesFile?.takeIf { it.isNotBlank() }?.let { args += listOf("--cookies", it) }
@@ -82,8 +93,8 @@ class ProcessYtDlpEngine(private val context: Context, private val binaryPath: (
 
     override fun cancel(id: String) { processes.remove(id)?.destroy() }
 
-    private fun runCommand(arguments: List<String>): Result<String> = runCatching {
-        val process = ProcessBuilder(listOf(binaryPath().absolutePath) + arguments)
+    private suspend fun runCommand(arguments: List<String>): Result<String> = runCatching {
+        val process = ProcessBuilder(listOf(toolManager.ytDlpPath.absolutePath) + arguments)
             .redirectErrorStream(true).start()
         val output = process.inputStream.bufferedReader().use { it.readText() }
         check(process.waitFor() == 0) { output.ifBlank { "yt-dlp command failed" } }

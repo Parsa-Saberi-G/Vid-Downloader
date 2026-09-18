@@ -25,6 +25,7 @@ class MainViewModel(
 ) : ViewModel() {
     val downloads = repository.downloads
     val settings = settingsRepository.settings
+    val toolState = dependencyManager.toolState
     private val _url = MutableStateFlow("")
     val url: StateFlow<String> = _url.asStateFlow()
     private val _info = MutableStateFlow<MediaInfo?>(null)
@@ -37,6 +38,7 @@ class MainViewModel(
     val message: StateFlow<String?> = _message.asStateFlow()
 
     init {
+        viewModelScope.launch { refreshDependencies() }
         viewModelScope.launch {
             settings.collect { value ->
                 if (value.autoCheckDependencies) refreshDependencies(value)
@@ -53,7 +55,7 @@ class MainViewModel(
             return@launch
         }
         repository.analyze(_url.value).onSuccess { _info.value = it }
-            .onFailure { errorHandler.report("analyze", it, "Install yt-dlp and check the URL.") }
+            .onFailure { errorHandler.report("analyze", it, "Check the URL or reinstall the app if the included download engine is unavailable.") }
     }
 
     fun download(audioOnly: Boolean = false) {
@@ -89,14 +91,11 @@ class MainViewModel(
     fun refreshDependencies(settings: AppSettings? = null) = viewModelScope.launch {
         _dependencies.value = dependencyManager.checkAll(settings?.ffmpegPath ?: "")
     }
-    fun install(id: DependencyId) = viewModelScope.launch {
-        _message.value = "Installing ${id.displayName}..."
-        dependencyManager.install(id).onSuccess { refreshDependencies() }
-            .onFailure { errorHandler.report("install-${id.name}", it, "Check your network connection or configure a compatible binary path.") }
-    }
-    fun remove(id: DependencyId) {
-        dependencyManager.remove(id)
-        refreshDependencies()
+    fun reinstallTools() = viewModelScope.launch {
+        _message.value = "Preparing built-in tools..."
+        dependencyManager.reinstall()
+            .onSuccess { _dependencies.value = it; _message.value = "Built-in tools are ready." }
+            .onFailure { errorHandler.report("tool-setup", it, "Reinstall the app if the bundled tools cannot be prepared.") }
     }
     fun updateSettings(transform: (AppSettings) -> AppSettings) = viewModelScope.launch {
         settingsRepository.update(transform)
