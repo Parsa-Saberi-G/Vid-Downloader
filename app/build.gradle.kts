@@ -5,11 +5,12 @@ plugins {
 }
 
 android {
-    namespace = "com.parsa.ytdlp"
+    namespace = "com.streamforge.downloader"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.parsa.ytdlp"
+    applicationId = "com.streamforge.downloader"
+	buildToolsVersion = "35.0.1"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
